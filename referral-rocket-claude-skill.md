@@ -1068,6 +1068,232 @@ Set up a discoverable profile:
 
 ---
 
+## Campaign Management — Full Reference
+
+### Campaigns List Page
+
+Displays all campaigns in a sortable table. Columns:
+- **Campaign ID**, **Name**, **Type**, **Status** (Active / Paused / Ended), **Participants**, **Impressions**, **Revenue**, **Rewards Pending**
+
+Row actions (Admin/Editor only, not Viewer):
+- **View Details** — opens the campaign
+- **Edit** — opens the campaign in the edit wizard (disabled if campaign is being deleted)
+- **Clone** — creates an exact copy with a new Campaign ID; participants, referrals, and rewards data are **not** copied
+
+Campaign limit enforcement (enforced in the UI):
+- Tier 0 (Starter): max 1 campaign
+- Tier 1 (Basic): max 3 campaigns
+- Tier 2 (Pro): max 10 campaigns
+- Tier 3 (Enterprise): unlimited
+
+If the limit is reached, the "Create New Campaign" button is disabled and an upgrade prompt is shown.
+
+**Affiliate view (when logged in as an affiliate):** Different columns — Campaign Name, Referral Link, Approval Status, Impressions, Referrals, Revenue, Commission Earned, Commission Due. Referral Link is only shown when approval status = Approved AND campaign is Active AND W-9 is submitted (if required). Otherwise shows "Waiting for approval", "W-9 tax form is required", or "Campaign [status]".
+
+---
+
+### Campaign Details Page
+
+Shows the **Campaign Link** (`https://referralrocket.io/campaign?id=YOUR-CAMPAIGN-ID`) with a copy button, then navigation tabs (NavCampaign).
+
+**NavCampaign tabs** (vary by campaign type):
+- Dashboard
+- Participants (or Affiliates for affiliate campaigns)
+- Rewards
+- Program Details
+- Integration
+- Email Notifications
+- Install
+- Assets
+- Webhooks
+- Tax Reports (affiliate campaigns only)
+- Settings / Edit
+
+---
+
+### Campaign Dashboard
+
+Metrics cards shown (campaign-level):
+- **Campaign Duration** — number of days since campaign creation
+- **Total Participants** — everyone who has joined
+- **Total Referrals** — total referrals made
+- **Revenue Generated** — total revenue tracked from referred users
+- **Reward Due** — total unpaid reward amount
+- **Reward Paid** — total paid reward amount
+- **Total Impressions** — total link impressions
+
+Charts:
+- **12-month area chart** — Participants, Referrers, and Referees per month (rolling last 12 months)
+- **Reward donut chart** — Total Paid vs Total Due (shows "No data" placeholder when both = 0)
+- **Milestone donut chart** (milestone/newsletter campaigns only) — participants who completed each milestone
+
+Recent activity table toggles between:
+- **Recent Referrals** — referred users with name/email, Referred By, joined date, amount spent, event status
+- **Top Promoters** — top referring participants
+
+Event status values: **Pending** (signed up, no payment yet), **Ongoing** (payments started, not yet complete), **Completed** (qualified for reward).
+
+---
+
+### Participants Tab
+
+For non-affiliate campaigns. Shows all participants in a searchable, paginated table.
+
+**Columns:** Participant (name + email + avatar), Code (monospace chip), Referred By (name + email), Impressions, Referrals, Revenue, Reward Due, Reward Paid, Fraud Score, Joined On.
+
+A sticky note icon appears on the participant row if the participant has notes attached.
+
+**Actions:**
+- Click any row → Participant Details
+- **Export** button — sends a CSV to the campaign owner's email (for large datasets)
+- **Add Participant** — manually add a single participant
+- Search bar with 1-second debounce
+
+Sorted by Joined On (newest first) by default. Server-side pagination (page size 10).
+
+---
+
+### Affiliates Tab (Affiliate Campaigns)
+
+Two sub-tabs:
+
+**Active affiliates** — same columns as Participants table above. Additional actions:
+- **Add Affiliate** (single)
+- **Bulk Add Affiliates** (CSV upload)
+- **Export** CSV
+
+**Pending affiliates** — same columns minus Revenue/Impressions. Additional capabilities:
+- **Row selection** (checkboxes) — select one or multiple
+- **Approve/Reject** selected via ApproveModal (can approve/reject multiple at once)
+- **Add Affiliate** (single)
+- **Bulk Add Affiliates**
+- **Export** CSV
+
+---
+
+### Participant Details Page
+
+Stats row (5 cards): **Impressions**, **Referrals**, **Revenue Generated**, **Reward Due**, **Reward Paid**.
+
+Profile section shows:
+- Avatar, full name, email, phone (if collected)
+- Fraud risk badge (Low / Medium / High) with color coding (green / orange / red)
+- Joined date badge
+- **Referral Link** (full URL) with copy button
+- **Referral Code** with copy button and **edit button** — opens "Edit Referral Code" modal; new code must be 4–8 alphanumeric characters, unique; validates format before allowing save
+- **Referred By** — clickable link to navigate to the referrer's details page
+- **Amount Spent** — total revenue attributed to this participant
+
+Reward Details section (refer-a-friend and Shopify):
+- **Event Status** — Pending / Ongoing / Completed / Not Applicable
+- For double-sided campaigns: **Referee Reward**, Referee Reward Redeemed, Referee Reward Balance
+- **Referrer Reward**, Referrer Reward Redeemed, Referrer Reward Balance
+
+Tax Documents section (shown when campaign has Collect W9 enabled):
+- **W-9 Document** — Submitted (with download link) or Not Submitted
+- **Tax Information** — Submitted (with masked TIN) or Not Submitted
+
+**Notes section** — free-text textarea, max 255 characters. Notes are saved per-participant and shown as a tooltip icon on the participants table. Save button appears only when notes differ from saved value.
+
+**Individual Reward Override** — accessible from the page header; opens "Customize Individual Reward Details" modal to set a per-participant commission that overrides the campaign default.
+
+Sub-tabs (NavParticipantsDetails):
+1. **Referrals** — list of people this participant referred; columns: Referral (name/email), Referred On, Amount Spent, Commission Earned, Event Status; Qualify button per row (opens QualifyModal); Add Referral button
+2. **Rewards** — all reward records for this participant; columns: Referred User (with MLM level badge if applicable), Amount Spent, Reward Value, Total Reward, Issued On, Status; also shows "Direct reward" label for directly issued rewards
+3. **Team** (MLM campaigns only) — sub-affiliates recruited by this participant; columns: Affiliate (name/email), Joined On, Revenue Generated, Reward Due, Reward Paid, Fraud Score
+
+---
+
+### QualifyModal
+
+Opened from the Referrals sub-tab on Participant Details. Fields:
+- **Amount Paid** — numeric input for the transaction amount
+- **Reward Referee** — checkbox (whether to also reward the referred user, for double-sided campaigns)
+
+---
+
+### Campaign Email Notifications Tab
+
+All emails have a toggle (on/off), subject line input, rich-text body editor (ReactQuill), and a **Test** button to send a test email to your own address.
+
+**Default on/off states:**
+| Email | Default |
+|---|---|
+| Affiliate Approved | ON |
+| New affiliate/referrer joined (to business) | ON |
+| Welcome email (affiliate joined program, to affiliate) | OFF |
+| Participant earns a reward | OFF |
+| Payout sent | OFF |
+| New referral made (to business) | OFF |
+| Referee joined via referral | OFF |
+| Monthly reward report | OFF |
+| Share widget email | OFF |
+
+**Share widget email** has an extra toggle: **Include referee data in referral link** — when enabled, the referral link in the shared email pre-fills the invitee's data.
+
+---
+
+### Campaign Install Tab
+
+Three-step guide:
+1. Set up integrations
+2. Configure rewards
+3. Install & promote
+
+For **referral_rocket_hosted** campaigns: shows the hosted Campaign Link with copy button and a downloadable QR code (PNG).
+
+For **self_hosted** campaigns: shows the embed script tag + `<div id="referral-rocket-widget">` + SDK code examples.
+
+For **Shopify** campaigns: additionally shows the Discount Modal script.
+
+The script tag and all code blocks have a copy button. The Campaign ID is pre-filled in all code examples.
+
+---
+
+### Global Dashboard
+
+Top metrics cards (account-wide):
+- **Total Campaigns** (links to create campaign if 0)
+- **Total Participants**
+- **Total Referrals**
+- **Revenue Generated**
+- **Pending Rewards** (links to /app/rewards)
+- **Total Affiliates**
+- **Pending Affiliates** (links to /app/pending-affiliates)
+
+Charts:
+- **12-month area chart** — Participants, Referrers, Referrals (selectable month range)
+- **Campaign type donut** — breakdown by campaign type
+- **Campaign ratio** — distribution across active campaigns
+
+Activity tables toggle between **Recent Referrals** and **Top Promoters**.
+
+**Affiliate dashboard** (shown when logged in as an affiliate): different metrics — their own impressions, referrals, commission earned, campaigns joined.
+
+---
+
+### Global Rewards Page (/app/rewards)
+
+Cross-campaign view of all Rewards Due across all campaigns. Allows processing payouts without navigating into each campaign individually.
+
+---
+
+### Global Pending Affiliates Page (/app/pending-affiliates)
+
+Cross-campaign view of all pending affiliate applications across all campaigns. Allows bulk approval/rejection without navigating into each campaign.
+
+---
+
+### Billing Page
+
+Embeds a Stripe Pricing Table component. Shows different pricing tables based on company country:
+- India → INR pricing table
+- All other countries → USD pricing table
+
+The pricing table is pre-filled with the user's email for Stripe Checkout.
+
+---
+
 ## Finding Your Campaign ID
 
 Your Campaign ID is visible:
