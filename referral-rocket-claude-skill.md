@@ -528,9 +528,12 @@ Referral Rocket does not fund rewards. You distribute them via:
 
 Rewards move through these statuses:
 - **Due** — earned, not yet paid
-- **Paid** — marked as paid
-- **Ignored** — manually ignored (skipped)
-- **Refunded** — reversed/refunded
+- **Paid** — marked as paid (issuedOn timestamp set)
+- **Ignored** — manually skipped (issuedOn set)
+- **Refunded** — reversed/refunded (can be resolved to RefundCompleted)
+- **RefundCompleted** — final state after a Refunded reward is resolved; has a `refundAction` field set to either `"Marked Done"` or `"Reward Reversed"`
+
+A reward has two monetary fields: `rewardValue` (the rate as configured, e.g., 10 for 10%) and `totalRewardValue` (the actual calculated dollar/currency amount paid out).
 
 ---
 
@@ -540,6 +543,34 @@ A participant appears in **Rewards Due** when their qualifying event is marked c
 1. **Manual** — navigate to Participant Details and mark the qualifying event complete
 2. **API** — your backend calls the Referral Rocket API when the qualifying event (purchase, signup) occurs
 3. **Automated integration** — Stripe, Shopify, Cashfree, Razorpay, or Ghost automatically notifies Referral Rocket when a transaction or signup is completed
+
+---
+
+## Auto-Reward Feature (Pro Plan)
+
+Auto-Reward automatically distributes earned rewards via a connected integration without manual intervention.
+
+### How to Enable
+On the **Integration** tab, click the settings icon on an active integration to configure:
+- **Auto Reward** — toggle on/off
+- **Minimum Amount** — only process rewards above this threshold (default: 0)
+- **Distribute Day** — `0` = immediate distribution; `15` (default) = batch on the 15th/28th
+
+### How Immediate Auto-Reward Works (Distribute Day = 0)
+When a qualifying event is received and the calculated reward exceeds the minimum amount, the reward is instantly sent via the integration (Stripe, Tremendous, Razorpay, or PayPal). If the payout succeeds, the reward status is set to Paid immediately. If it fails (e.g., insufficient Tremendous balance, Stripe error), the reward is left as Due for manual processing.
+
+### How Scheduled Auto-Reward Works (Distribute Day = 15 or 30)
+Due rewards created during the previous month are processed in batches. The scheduler runs on the **1st, 15th, and 28th** of each month (28th is treated internally as the 30th):
+- **1st of month** — sends the monthly reward report email to business owners (no payout processing)
+- **15th and 28th** — processes due rewards from the previous month via the active integration
+
+Supported integrations for auto-reward: **Stripe, Tremendous, Razorpay, PayPal** (and Shopify for immediate mode only).
+
+### Monthly Reward Report
+Sent automatically on the 1st of each month to the account owner. Lists all Due rewards from the previous month across all active campaigns. Only sent for **Basic plan and above** (not Free). Requires the campaign to be active and not deleted.
+
+### enableRefereeReward Flag
+CampaignIntegration also has an `enableRefereeReward` toggle — when true, the integration automatically issues rewards to the referee (not just the referrer) for double-sided campaigns.
 
 ---
 
@@ -585,53 +616,88 @@ Best for: affiliate programs, marketing pages, higher conversion.
 
 ### Option 4 — In-App Integration (JavaScript SDK)
 
-```javascript
-// Get campaign info
-window.Rocket.getCampaign().then(campaign => {
-  console.log(campaign);
-});
+The JS SDK is embedded via the widget script tag. It exposes `window.Rocket` globally and stores referral codes in a cookie named `rr_referral_code`. Cookie duration is set from the campaign's **Cookie Duration** setting (default: 60 days). If a referralCode is in the page URL (`?referralCode=XXXXX`), it is automatically captured and stored in the cookie on page load.
 
-// Add a participant
-window.Rocket.getCampaign().addParticipant({
+```javascript
+const campaign = window.Rocket.getCampaign(); // or getCampaign('YOUR-CAMPAIGN-ID') for multi-campaign pages
+
+// Get campaign details
+await campaign.getCampaignDetail();
+
+// Add a participant (creates if not exists; returns participant object)
+await campaign.addParticipant({
   email: 'john@example.com',
   fName: 'John',
   lName: 'Smith',
-  referredByCode: 'OPTIONAL_CODE'   // omit to auto-detect from cookie
+  referredByCode: 'OPTIONAL_CODE',   // omit to auto-detect from cookie
+  referredByEmail: 'referrer@example.com'  // alternative to referredByCode
 });
 
 // Get a participant's details
-window.Rocket.getCampaign().getParticipant({
+await campaign.getParticipantDetail({
   email: 'john@example.com'
   // or: code: 'REFERRAL_CODE'
 });
 
 // Qualify a participant (triggers reward eligibility)
-window.Rocket.getCampaign().qualifyParticipant({
+await campaign.qualifyParticipant({
   email: 'jane@example.com',
-  amountPaid: 99.00,
-  rewardReferee: false
+  amountPaid: 99.00,         // purchase amount (0 if not applicable)
+  rewardReferee: false,      // set true to also reward the referee
+  referredByCode: 'CODE'     // provide if participant doesn't exist yet
+});
+
+// Issue a direct reward to a participant
+await campaign.issueDirectReward({
+  email: 'jane@example.com',
+  rewardAmount: 25.00  // must be > 0
 });
 
 // Get the referral code stored in the visitor's cookie
-window.Rocket.getReferralCode();
+campaign.getReferralCode();
 
-// Check if a referral code is valid (returns boolean)
-window.Rocket.validateCode('SOME_CODE');
+// Validate a referral code (returns boolean)
+await campaign.validateCode('SOME_CODE');
 ```
 
-For multiple campaigns on the same page, pass the campaign ID explicitly:
-```javascript
-window.Rocket.getCampaign('YOUR-CAMPAIGN-ID').addParticipant({...});
-```
+**How referralCode is resolved** (priority order):
+1. If you pass `campaignId` explicitly to `getCampaign()`, that is used
+2. Otherwise resolves from the stored cookie's referral code via API lookup
+3. Falls back to `campaign-id` attribute on the script tag (backward compatibility)
 
 Best for: refer-a-friend programs inside a logged-in product.
 
 ### Option 5 — REST API (Fully Custom)
-Build a completely custom flow using the Referral Rocket REST API.
+Build a completely custom flow using the Referral Rocket REST API. **Requires Pro plan or above.**
+
+**Authentication:** Pass your API key in the `x-api-key` request header. Available under Account → API Keys. Generating a new key immediately invalidates the old one.
+
+**All endpoints are under `/api/v1/` and require `x-api-key` header + campaign ownership:**
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/v1/getCampaign?id=CAMPAIGN_ID` | Get campaign details |
+| GET | `/api/v1/getParticipant?email=&id=CAMPAIGN_ID` | Get one participant |
+| GET | `/api/v1/getAllParticipants?id=CAMPAIGN_ID&page=0&size=20` | List all participants (paginated) |
+| GET | `/api/v1/getReferrals?id=CAMPAIGN_ID&email=` | List referrals for a participant |
+| GET | `/api/v1/getAllRewards?id=CAMPAIGN_ID&page=0&size=20` | List all rewards (paginated) |
+| GET | `/api/v1/validateCode?code=&campaignId=` | Check if a referral code is valid |
+| POST | `/api/v1/addParticipant` | Add/create participant |
+| POST | `/api/v1/qualifyParticipant` | Qualify a participant (trigger reward) |
+| POST | `/api/v1/issueDirectReward` | Issue a direct reward by amount |
+| POST | `/api/v1/updateRewardStatus` | Update a reward's status |
+
+**`addParticipant` body fields:** `email` (required), `id` (campaignId, required), `firstName`, `lastName`, `referredByCode`, `referredByEmail`
+
+**`qualifyParticipant` body fields:** `email` (required), `id` (campaignId, required), `amountPaid` (number), `rewardReferee` (boolean)
+
+**`issueDirectReward` body fields:** `email` (required), `id` (campaignId, required), `rewardAmount` (number, required, > 0)
+
+**`updateRewardStatus` body fields:** `rewardId` (number, required), `campaignId` (required), `status` (required; one of `Due`, `Paid`, `Ignored`)
+
+**Public API (no auth required, used by widget/SDK):** Endpoints under `/api/public/` — `addParticipant`, `getParticipant`, `qualifyParticipant`, `issueDirectReward`, `getCampaignDetail`, `getCampaignFromReferralCode`, `validateCode`. These are called by the JS SDK and widget; no API key needed.
 
 API documentation: https://referral-rocket.gitbook.io/docs/developer-tools/rest-api
-
-**Authentication:** API key — available on Pro plan. Manage API keys under Account → API Keys. Generating a new key immediately invalidates the old one.
 
 Best for: mobile apps, headless builds, complex custom flows.
 
@@ -682,7 +748,7 @@ Campaigns can be paused at any time without losing data. Campaigns with an expir
 ## Affiliate Program Hub (Marketplace)
 
 ### For Businesses: List Your Program
-List on the Referral Rocket Affiliate Program Hub — a directory where affiliates can discover and apply. Configure from **Marketplace** in the app.
+List on the Referral Rocket Affiliate Program Hub — a directory where affiliates can discover and apply. Configure from **Marketplace** in the app. New listings are submitted with **pending** status (status=0) and reviewed by the Referral Rocket team before going live. An alert email is sent to Referral Rocket support on submission.
 
 ### For Businesses: Find Affiliates
 Browse a database of affiliates and reach out directly (paid plans, feature activation required).
@@ -784,6 +850,17 @@ Click **Test Connection** to verify before saving.
 ### Webhooks (Account-Level)
 Under **Account → Webhooks**. Add endpoints that receive event notifications for all campaigns in your account. You can add multiple endpoints, view event history, and edit existing webhooks.
 
+**Webhook events (exactly 3):**
+- `referrer_added` — fired when a new affiliate/referrer joins
+- `referee_added` — fired when a referred user joins
+- `reward_added` — fired when a reward record is created (Due or Paid)
+
+**Important webhook behaviors:**
+- Webhooks are delivered **asynchronously**
+- If the endpoint returns a non-200 HTTP response, the webhook is **immediately disabled** (status set to inactive). You must re-enable it manually.
+- The webhook secret can be **regenerated** at any time — this invalidates the previous secret
+- Delivery history is logged and viewable per webhook (status code, payload, error message, timestamps)
+
 Full webhook guide: https://referral-rocket.gitbook.io/docs/developer-tools/webhooks
 
 ### Payer Information (for 1099-NEC)
@@ -883,10 +960,182 @@ Instagram, WhatsApp (custom message), Twitter/X, Facebook, LinkedIn (custom mess
 Navigate to your campaign → **Install** tab. The script tag is pre-filled with your Campaign ID.
 
 **When are 1099-NEC forms generated?**
-Automatically each January for the prior calendar year, for any affiliate who received $600 or more in paid rewards. Requires Payer Information in account settings and W-9 collection enabled on your campaign.
+Automatically each January (Jan 15–28 window) for the prior calendar year, for any affiliate who received $600 or more in paid rewards. Requires Payer Information in account settings, W-9 collection enabled on the campaign, and the affiliate having submitted their W-9.
 
 **What is the maximum percentage value I can set for a commission?**
 99%. The system rejects values of 100 or above.
+
+**What happens when a webhook fails to deliver?**
+The webhook is immediately set to inactive (disabled) after the first failed delivery (non-200 response). You must re-enable it manually in Account → Webhooks. The delivery history is logged with the error message and status code.
+
+**Can I override a commission rate for a specific affiliate?**
+Yes. Go to the affiliate's participant detail page and enable the Individual Reward toggle. You can set a different rate, type, recurring rules, and currency just for that affiliate without changing the campaign's global settings.
+
+**How does auto-reward batch processing work?**
+If Distribute Day is set to 15 (the default), due rewards created in the previous calendar month are processed on the 15th and 28th of each month (28th is treated as the 30th). Set Distribute Day to 0 for immediate distribution when a qualifying event is received.
+
+**What does "Minimum Amount" do in Auto-Reward settings?**
+It is a threshold: the calculated reward amount must exceed this value for auto-payout to trigger. For example, if set to $5, a $3 reward will stay Due instead of being auto-paid. It does not affect manual payout.
+
+**When does auto-reward send the monthly report vs. process payouts?**
+On the 1st of the month: monthly report email only. On the 15th and 28th: reward batch processing only. These are separate operations.
+
+**Do I need an API key to use the JavaScript SDK?**
+No. The JS SDK calls public endpoints (`/api/public/`) which require no authentication. The REST API key is only needed for the `/api/v1/` server-side REST API.
+
+**What referral code format is used?**
+Auto-generated from first + last name (up to 8 lowercase characters). If too short (< 4 chars), random digits are appended. If there's a collision, characters are added until unique. If no name is provided, an 8-character random alphanumeric code is used.
+
+**Can I delete a participant with existing referrals or rewards?**
+No. A participant can only be deleted if they have zero referrals and zero rewards (in any status).
+
+**What is the Club Reward feature?**
+When enabled, all rewards for a referred user go to whoever originally referred them, even if another affiliate's link was later used. This prevents commission stealing by ensuring the first referrer always gets credit.
+
+**What is the Affiliate Welcome Bonus?**
+A one-time credit reward automatically created when an approved affiliate joins (for AFFILIATE campaign type). Set in Rewards Info → "Affiliate Welcome Bonus Value". Must be > 0. Only paid to affiliates who join directly (not referred affiliates). The welcome bonus is created as a Due reward using the same reward type/currency as the campaign.
+
+**How is the fraud score calculated?**
+Five signals are weighted: IP match (35%), browser fingerprint match (35%), signup within 30 minutes (10%), same ZIP code (10%), geo-distance under 1km (10%). Each referee is compared to the referrer's other referees. Final score: Low (<35), Medium (35–74), High (≥75).
+
+---
+
+## Fraud Detection
+
+Referral Rocket automatically scores every referral for fraud using 5 weighted signals. The score is computed by comparing each referee's data against the referrer's other referees.
+
+| Signal | Weight | Triggers when |
+|---|---|---|
+| IP address match | 35 | Referee shares the same IP as the referrer |
+| Browser fingerprint match | 35 | Referee shares the same device fingerprint as the referrer |
+| Signup time proximity | 10 | Referee signed up within 30 minutes of the referrer |
+| ZIP code match | 10 | Referee has the same ZIP code as the referrer |
+| Geographic distance | 10 | Referee is within 1km of the referrer (Haversine formula) |
+
+**Score interpretation:**
+- **Low** — score < 35
+- **Medium** — score 35–74
+- **High** — score ≥ 75
+
+The fraud score is visible on each participant's detail page and in the participants list. It is computed at display time, not stored permanently.
+
+The join widget collects the IP address and geographic coordinates automatically on signup. The browser fingerprint (`ClientJS`) is collected client-side.
+
+---
+
+## Individual Reward Override
+
+An admin can override the commission rate for a specific affiliate participant without changing the campaign's global settings.
+
+**How to access:** Participant Detail page → enable "Individual Reward" toggle.
+
+**Overridable fields:**
+- Reward value (amount or percentage)
+- Reward type (Percentage or Monetary)
+- Recurring type (no_limit, payment_limit, month_limit)
+- Recurring limit (number of payments or months)
+- Reward currency
+- Reward duration
+- Issue type (Coupon or Credit)
+
+When an individual override is active, the participant's personal settings take precedence over campaign defaults for all recurring rule evaluations (e.g., MONTH_LIMIT, PAYMENT_LIMIT checks use the participant's recurringLimit, not the campaign's).
+
+---
+
+## Affiliate SSO Login
+
+When an affiliate is approved (or auto-approved on join), Referral Rocket automatically creates an SSO account for them via Keycloak. A temporary password is emailed to the affiliate. They can use this to log into the **Affiliate Portal** (affiliate hub) at the hosted campaign URL.
+
+The affiliate portal shows:
+- Their unique referral link
+- Referrals they've made
+- Their earned commissions (Due and Paid)
+- W-9 submission (if required by the campaign)
+- Tax documents (if applicable)
+
+---
+
+## Participant Management
+
+### Referral Code Generation
+Referral codes are auto-generated from the participant's name:
+- Takes first name + last name, combined up to 8 characters (lowercase)
+- If total < 4 characters, random digits are appended
+- If the generated code already exists in the database, random alphanumeric characters are appended until unique
+- If both names are empty, an 8-character random alphanumeric code is generated
+- Example: "John Smith" → "johnsmit"
+
+### Participant Deletion Rules
+A participant can only be deleted if:
+1. `referralCount = 0` (they have not referred anyone)
+2. They have no rewards (Due, Paid, or otherwise)
+
+### Campaign Share URL Format
+- **Referral Rocket hosted:** `https://referralrocket.io/campaign?id=CAMPAIGN_ID&referralCode=CODE`
+- **Self-hosted:** appends `?referralCode=CODE` (or `&referralCode=CODE` if the URL already has query params)
+
+### Invite Affiliates Feature
+From the Participants tab, admins can invite potential affiliates by email. Rate limit: a maximum of **2 invitations per email address within any rolling 30-day window**. If exceeded, the system shows an alert.
+
+---
+
+## Campaign Status — How It's Determined
+
+A campaign's status is computed dynamically each time it is loaded (not stored). The logic (in priority order):
+
+1. **Deleted** — if `deleteFlag = true`
+2. **Ended** — if `endFlag = true` AND today is after the end date
+3. **Active** — if `pauseFlag = false` and within date range
+4. **Paused** — if `pauseFlag = true`
+
+**Additional auto-pause conditions (override Active to Paused):**
+- Company subscription is active but payment has lapsed (`company.active = true` AND `company.paid = false`)
+- Total participants across all campaigns exceed the plan limit:
+  - Free: 5 participants, 3 affiliates
+  - Basic: 1,000 participants, 500 affiliates
+  - Pro: 10,000 participants, 1,000 affiliates
+  - Enterprise: unlimited
+
+When auto-paused due to limits, the campaign can be re-activated by upgrading the plan or reducing participant/affiliate counts.
+
+**Campaign cloning:** Creates an exact copy with prefix "Clone " in the name, a new unique Campaign ID, all statistics (views, revenue, rewards) reset to 0, and all images cleared. Tiers, MLM levels, and milestones are deep-copied with new IDs.
+
+---
+
+## Recurring Commission Rules (Exact Backend Constants)
+
+For affiliate campaigns, the recurring setting controls how long a referrer earns commissions on their referral:
+
+| UI Label | Backend Value | Behavior |
+|---|---|---|
+| Life-time | `no_limit` | Affiliate earns on every qualifying event indefinitely |
+| Set maximum commissions per referral | `payment_limit` | Stops after X payments from the referred user |
+| Set maximum commission period | `month_limit` | Stops after X months from the referee's creation date |
+
+For `month_limit`: the system uses `ChronoUnit.MONTHS.between(referee.createdOn, today)`. If `monthsSinceCreated >= recurringLimit`, the referee is considered expired and no new rewards are created.
+
+For `payment_limit`: the system tracks `referee.paymentCount`. Each `qualifyParticipant` call increments paymentCount. When `paymentCount >= recurringLimit`, the referee is marked complete and future calls produce no rewards.
+
+For campaigns where individual reward override is set on a referrer, their individual recurringLimit takes precedence over the campaign's setting.
+
+---
+
+## Tax and Compliance — Exact Timing
+
+### Schedule
+1099-NEC report generation runs **daily from January 15 to January 28** (at 3:00 AM). This window is intentionally broad — the idempotency check prevents duplicate records if a participant crosses $600 on different days within the window.
+
+### Conditions Required for a 1099 Report
+All must be true:
+1. Campaign has `collectW9 = true`
+2. The participant has `w9Submitted = true`
+3. Total **paid** rewards for the participant in the prior calendar year ≥ **$600**
+4. No existing 1099 report for that participant and that tax year
+
+The tax year is always `current year - 1` (e.g., reports generated in January 2026 cover calendar year 2025).
+
+### Payer Information
+Required in Account → Payer Information before affiliates can submit W-9. Fields: full name, telephone, TIN (SSN or EIN format; format-validated locally, not IRS-verified), street address, city, state, country, ZIP.
 
 ---
 
