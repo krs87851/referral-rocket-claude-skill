@@ -728,11 +728,56 @@ Shows everyone who has joined the campaign with status, referral count, and rewa
 ### Affiliates Tab (Affiliate Campaigns)
 Shows affiliate performance, pending applications (if manual approval is on), and commission earned. You can approve or reject pending affiliates.
 
+### Qualifying a Participant (Manual)
+
+The **Qualify** button on the Participants tab opens a confirmation modal:
+- Confirms that qualifying means the participant completed the required event and the referrer becomes eligible for a reward
+- **Amount spent** — number input (enter 0 if no purchase amount)
+- **"Add this user to be eligible for a reward"** checkbox — also marks the referee as reward-eligible (double-sided). Only shown when the campaign has `disableRewardReferee=false`.
+
+### Per-Affiliate Individual Reward Override
+
+The **Customize Individual Reward Details** modal (accessible from a participant's detail page) overrides campaign-level reward settings for one specific affiliate:
+- **Individual Reward** checkbox (Activated/Deactivated) — when unchecked, disables all other fields
+- Affiliate Reward Value, Reward Type (Monetary/Percentage), Reward Currency
+- Issue Reward As: Coupon/Credit (hidden when tiered/MLM active or Shopify)
+- Reward Valid For: 1, 3, 6, 9, 12, 18, 24 months, or Forever (Coupon only)
+- Recurring commission: Life-time, Per Payment, Per Month (affiliate only)
+- Commission period/count dropdown (when Per Payment or Per Month): 1, 2, 3, 6, 9, 12 (+ 18, 24, 36 for month_limit)
+- Save button disabled if rewardValue ≤ 0 or (Percentage and ≥ 100)
+
 ### Rewards Section
-- **Rewards Due** — earned but unpaid
-- **Rewards Paid** — historical paid rewards
-- **Rewards Ignored** — manually ignored rewards
-- **Rewards Refunded** — reversed/refunded rewards
+
+Business owners see four tabs: **Due**, **Paid**, **Ignored**, **Refunds**. Affiliates viewing their own earnings in the affiliate portal see only **Due** and **Paid** — Ignored and Refunds are hidden.
+
+**Rewards Due tab:**
+
+For affiliate/refer-a-friend/Shopify campaigns: Referrer (name + email link), Referee (name + email + MLM level), Amount Spent, Reward Due / Commission Due (shown as % for Percentage type), Fraud Score badge (Low=green, Medium=yellow, High=red), Paid Status, Created On (hidden by default), Reward IDs (clickable chips — hidden by default).
+
+For milestone/newsletter/leadership board: Name, Email, Total Referrals, Milestone Achieved, Fraud Score, Paid Status, Created On.
+
+Clicking a Reward ID chip opens: Reward ID, Reward Amount, Total Reward, Currency, Issue Type, Duration (months), Status, Transaction ID, Issue ID, Created On, Note.
+
+Top toolbar: Export (all CSV), Wise CSV, PayPal CSV, Issue Reward, Ignore Reward.
+- Wise CSV: name, recipientEmail, paymentReference, receiverType, amountCurrency, amount, sourceCurrency, targetCurrency, type="EMAIL"
+- PayPal CSV: email, currency, amount, currency, currency, description, "PAYPAL"
+
+**Rewards Paid tab:**
+
+Same column layout as Due but Paid On / Paid Status columns. When Club Reward is active, an extra **Beneficiary** column is added showing the first referrer's email. Single Export button — no bulk issue or ignore available.
+
+**Rewards Ignored tab:**
+
+Same layout as Due but Commission Ignored and Ignored On columns. Single Export button. **Reverse Ignore Reward** button moves selected rows from Ignored → Due, restoring reward eligibility.
+
+**Refunds tab — two sub-tabs:**
+
+*Needs Attention* — paid rewards whose invoice was later refunded:
+- Columns: Reward ID (chip), Referrer, Referee, Amount, Issue Type, Note, Actions
+- **Mark Done** — marks resolved with no automated action. Irreversible.
+- **Reverse Reward** (Credit or Coupon only): Credit = recovers from customer's credit balance (fails if insufficient); Coupon = deletes active Stripe discount/coupon (fails if already redeemed). On success → moves to Completed with refundAction="Reward Reversed".
+
+*Completed* — resolved refunds: Reward ID, Referrer, Amount, Issue Type, Refund Action, Completed On, Note.
 
 ### Campaign Dashboard
 Per-campaign analytics: clicks, joins, referrals, conversions, and reward totals.
